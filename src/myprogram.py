@@ -2,6 +2,7 @@
 import os
 import string
 import random
+import json
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 
@@ -14,7 +15,13 @@ class MyModel:
     def load_training_data(cls):
         # your code here
         # this particular model doesn't train
-        return []
+        file_name = "./src/training_data_one.txt"
+        data = []
+        with open(file_name) as file:
+            for line in file:
+                inp = line[:-1] # we want to cut new line character but keep last char so last char - 1 still has data
+                data.append(inp)
+        return data
 
     @classmethod
     def load_test_data(cls, fname):
@@ -34,31 +41,49 @@ class MyModel:
 
     def run_train(self, data, work_dir):
         # your code here
-        pass
+        self.nextCharCountsDict = {} # get a dict to store char -> next char counts
+        for line in data:
+            for idx in range(len(line) - 1):
+                char = line[idx]
+                nextChar = line[idx + 1]
+                # make sure char has a dict inside it
+                if char not in self.nextCharCountsDict:
+                    self.nextCharCountsDict[char] = {}
+                # get curr count or default to 0, increment by 0
+                self.nextCharCountsDict[char][nextChar] = self.nextCharCountsDict[char].get(nextChar, 0) + 1
+
 
     def run_pred(self, data):
         # your code here
         preds = []
-        all_chars = string.ascii_letters
-        for inp in data:
-            # this model just predicts a random character each time
-            top_guesses = [random.choice(all_chars) for _ in range(3)]
-            preds.append(''.join(top_guesses))
+        # all_chars = string.ascii_letters <- keeping so we know to implement multilanguage stuff later
+        for prompt in data:
+            if not prompt or not prompt[len(prompt) - 1] in self.nextCharCountsDict:
+                preds.append("aei") # just append 3 vowels which are likely in english as base case
+                continue 
+            
+            lastChar = prompt[len(prompt) - 1] # curr logic only cares about last char (will be improved LOL)
+            lastCharDict = self.nextCharCountsDict[lastChar] # we know it has to exist based on our case above
+            topThreeCountsSorted = sorted(lastCharDict.items(), key = lambda item: item[1], reverse=True)[:3]
+            # topThreeCountsSorted stores 3 tuples of len 2, need to just append the literal chars
+            preds.append("".join([item[0] for item in topThreeCountsSorted]))
+        # return our predictions
         return preds
 
     def save(self, work_dir):
         # your code here
         # this particular model has nothing to save, but for demonstration purposes we will save a blank file
         with open(os.path.join(work_dir, 'model.checkpoint'), 'wt') as f:
-            f.write('dummy save')
+            json.dump(self.nextCharCountsDict, f)
 
     @classmethod
     def load(cls, work_dir):
         # your code here
         # this particular model has nothing to load, but for demonstration purposes we will load a blank file
+        model = MyModel()
         with open(os.path.join(work_dir, 'model.checkpoint')) as f:
-            dummy_save = f.read()
-        return MyModel()
+            model.nextCharCountsDict = json.load(f)
+        return model
 
 
 if __name__ == '__main__':
