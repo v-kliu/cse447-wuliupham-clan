@@ -6,7 +6,7 @@ rm -rf submit submit.zip
 mkdir -p submit
 
 # submit team.txt
-printf "Victor Liu,vkliu\nAngie Wu,awu\nLam Pham,lpham" > submit/team.txt
+printf "Victor Liu,vkliu\nAngie Wu,awu28\nLam Pham,lampham" > submit/team.txt
 
 # copy requiremenets
 cp requirements.txt submit/requirements.txt
