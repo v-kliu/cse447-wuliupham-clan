@@ -1,0 +1,24 @@
+so im just taking notes
+
+top 10 most spoken languages on the iss are:
+1. english
+2. russian
+3. japenese
+4. french
+5. german
+6. italian
+7. spanish
+8. dutch
+9. chinese
+10. arabic
+
+datasets were collected from https://wortschatz.uni-leipzig.de/en/download/ 
+will require some preprocessing to get rid of prefix number
+10k sentences from scraped newstories in each language in most recent year
+
+scoring log
+
+character-level bigram (looks at only the last 1 character, predicts top 3 most frequent next characters from training data of 887 lines about UW vs Oregon)
+scored: 4/13 correct = 30.77% success rate
+note: falls back to "aei" for unseen characters, very limited context and narrow training data
+
