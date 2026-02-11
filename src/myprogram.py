@@ -1,88 +1,281 @@
 #!/usr/bin/env python
 import os
-import string
 import random
 import json
+import re
+from collections import defaultdict
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 
 class MyModel:
     """
-    This is a starter model to get you started. Feel free to modify this file.
+     n-gram language model of characters with interpolation
+    basically the same thing from assignment 1b but for characters instead of words
+    uses up to 5-gram context to predict next character
+    trained on 10 language datasets and sentences, see info.txt
     """
+
+    def __init__(self):
+        # max n-gram order, so we look at up to 4 characters of context
+        self.N = 5
+
+        # same structure as WordNGramLM from hw1b
+        # ngramCounts[n] is a dict: context -> {next_char: count}
+        # contextCounts[n] is a dict: context -> total count
+        # e.g. ngramCounts[3]["th"] = {"e": 500, "a": 200, ...}
+        self.ngramCounts = {}
+        self.contextCounts = {}
+        for n in range(1, self.N + 1):
+            self.ngramCounts[n] = {}
+            self.contextCounts[n] = {}
+
+        # interpolation weights just like assignment 1b exercise 3.3
+        # P(next) = lambda1*P_unigram + lambda2*P_bigram + ... + lambda5*P_5gram
+        # higher n = more context = better prediction but sparser data
+        # so we weight higher orders more when they have data
+        self.lambdas = [0.05, 0.10, 0.20, 0.25, 0.40]
+
+
+    @classmethod
+    def preprocess_line(cls, line):
+        """
+        each line looks like "123\tThe actual sentence here"
+        so we strip the leading number + tab
+        """
+        # strip leading number and tab that leipzig corpus adds
+        line = re.sub(r'^\d+\t', '', line)
+        line = line.strip()
+        return line
+
 
     @classmethod
     def load_training_data(cls):
-        # your code here
-        # this particular model doesn't train
-        file_name = "./src/training_data_one.txt"
-        data = []
-        with open(file_name) as file:
-            for line in file:
-                inp = line[:-1] # we want to cut new line character but keep last char so last char - 1 still has data
-                data.append(inp)
-        return data
+        """
+        load all training data from the training_data folder
+        each file is a different language ~10k sentences each
+        also loads the og training_data_one.txt
+        """
+        all_data = []
+
+        # load the multilingual datasets
+        data_dir = "./src/training_data"
+        if os.path.isdir(data_dir):
+            for fname in os.listdir(data_dir):
+                fpath = os.path.join(data_dir, fname)
+                if os.path.isfile(fpath) and fname.endswith('.txt'):
+                    print(f'  loading {fname}...')
+                    with open(fpath, encoding='utf-8') as f:
+                        for line in f:
+                            cleaned = cls.preprocess_line(line)
+                            if cleaned:
+                                all_data.append(cleaned)
+
+        # don't use old data of uw > oregon dataset
+
+        print(f'  total training sentences: {len(all_data)}')
+        return all_data
+
 
     @classmethod
     def load_test_data(cls, fname):
-        # your code here
         data = []
-        with open(fname) as f:
+        with open(fname, encoding='utf-8') as f:
             for line in f:
                 inp = line[:-1]  # the last character is a newline
                 data.append(inp)
         return data
 
+
     @classmethod
     def write_pred(cls, preds, fname):
-        with open(fname, 'wt') as f:
+        with open(fname, 'wt', encoding='utf-8') as f:
             for p in preds:
                 f.write('{}\n'.format(p))
 
+
     def run_train(self, data, work_dir):
-        # your code here
-        self.nextCharCountsDict = {} # get a dict to store char -> next char counts
+        """
+        build n-gram counts from training data
+        basically the same as WordNGramLM.fit() from hw1b
+        but instead of words we use characters, and instead of tuples we use strings as context
+
+        for each character in the text, we look at the previous n-1 characters (the context)
+        and count how many times this character follows that context
+        """
+
         for line in data:
-            for idx in range(len(line) - 1):
-                char = line[idx]
-                nextChar = line[idx + 1]
-                # make sure char has a dict inside it
-                if char not in self.nextCharCountsDict:
-                    self.nextCharCountsDict[char] = {}
-                # get curr count or default to 0, increment by 0
-                self.nextCharCountsDict[char][nextChar] = self.nextCharCountsDict[char].get(nextChar, 0) + 1
+            for i in range(len(line)):
+                next_char = line[i]
+                # go through each n-gram order, same loop structure as hw
+                for n in range(1, self.N + 1):
+                    if n == 1:
+                        # unigram - no context, just overall char frequency
+                        context = ""
+                    else:
+                        # need n-1 chars of history
+                        context_start = i - (n - 1)
+                        if context_start < 0:
+                            continue  # not enough context yet skip
+                        context = line[context_start:i]
+
+                    # same pattern as self.ngramCounts[context][targetWord] += 1 from hw
+                    if context not in self.ngramCounts[n]:
+                        self.ngramCounts[n][context] = {}
+                        self.contextCounts[n][context] = 0
+
+                    if next_char not in self.ngramCounts[n][context]:
+                        self.ngramCounts[n][context][next_char] = 0
+
+                    self.ngramCounts[n][context][next_char] += 1
+                    self.contextCounts[n][context] += 1
+
+
+    def _get_interpolated_scores(self, prompt):
+        """
+        compute interpolated probabilities for the next character
+        this is  same math from WordNGramLMWithInterpolation.eval_perplexity
+
+        from hw1b:
+        interpolatedProb = 0.0
+        for n_idx, m in enumerate(self.models):
+            lambda_val = self.lambdas[n_idx]
+            ngram_count = m.ngramCounts.get(curr_context, {}).get(target, 0)
+            context_count = m.contextCounts.get(curr_context, 0)
+            if context_count > 0:
+                interpolatedProb += lambda_val * (ngram_count / context_count)
+
+        we do the same thing but for every possible next character
+        instead of just one target word
+        """
+        scores = defaultdict(float)
+
+        for n in range(1, self.N + 1):
+            n_idx = n - 1  # index into lambdas list
+            lambda_val = self.lambdas[n_idx]
+
+            if n == 1:
+                context = ""
+            else:
+                # grab last n-1 chars as context
+                if len(prompt) < n - 1:
+                    continue # prompt too short for this order
+                context = prompt[-(n - 1):]
+
+            # check if we ever saw this context  (same as m.ngramCounts.get(curr_context, {}))
+            if context not in self.ngramCounts[n]:
+                continue  # never seen this context, contributes 0
+
+            charCounts = self.ngramCounts[n][context]
+            contextCount = self.contextCounts[n][context]
+
+            if contextCount == 0:
+                continue
+
+            # add weighted prob for each possible next char
+            # same formula: lambda_val * (ngram_count / context_count)
+            for char, count in charCounts.items():
+                scores[char] += lambda_val * (count / contextCount)
+
+        return scores
 
 
     def run_pred(self, data):
-        # your code here
+        """
+        for each test prompt use interpolated n-gram scores to pick top 3 chars
+        """
         preds = []
-        # all_chars = string.ascii_letters <- keeping so we know to implement multilanguage stuff later
+
         for prompt in data:
-            if not prompt or not prompt[len(prompt) - 1] in self.nextCharCountsDict:
-                preds.append("aei") # just append 3 vowels which are likely in english as base case
-                continue 
-            
-            lastChar = prompt[len(prompt) - 1] # curr logic only cares about last char (will be improved LOL)
-            lastCharDict = self.nextCharCountsDict[lastChar] # we know it has to exist based on our case above
-            topThreeCountsSorted = sorted(lastCharDict.items(), key = lambda item: item[1], reverse=True)[:3]
-            # topThreeCountsSorted stores 3 tuples of len 2, need to just append the literal chars
-            preds.append("".join([item[0] for item in topThreeCountsSorted]))
-        # return our predictions
+            try:
+                scores = self._get_interpolated_scores(prompt)
+
+                if scores:
+                    # sort by score descending take top 3  (same as how we sorted in old version)
+                    topCharsSorted = sorted(scores.items(), key=lambda item: item[1], reverse=True)[:3]
+                    pred = "".join([ch for ch, _ in topCharsSorted])
+                else:
+                    # fallback if we got nothing
+                    pred = "e a"
+
+                # pad to 3 chars if we dont have enough predictions
+                fallbacks = "e atonirsl"
+                idx = 0
+                while len(pred) < 3 and idx < len(fallbacks):
+                    if fallbacks[idx] not in pred:
+                        pred += fallbacks[idx]
+                    idx += 1
+
+                preds.append(pred[:3])
+
+            except Exception:
+                # fall back
+                preds.append("e a")
+
         return preds
 
+
     def save(self, work_dir):
-        # your code here
-        # this particular model has nothing to save, but for demonstration purposes we will save a blank file
-        with open(os.path.join(work_dir, 'model.checkpoint'), 'wt') as f:
-            json.dump(self.nextCharCountsDict, f)
+        """
+        save model to json, have to convert to regular dicts bc json doesnt like defaultdict
+        """
+        save_data = {
+            'N': self.N,
+            'lambdas': self.lambdas,
+            'ngramCounts': {},
+            'contextCounts': {}
+        }
+
+        for n in range(1, self.N + 1):
+            n_str = str(n)
+            save_data['ngramCounts'][n_str] = {}
+            save_data['contextCounts'][n_str] = {}
+
+            for context, charCounts in self.ngramCounts[n].items():
+                save_data['ngramCounts'][n_str][context] = dict(charCounts)
+
+            for context, total in self.contextCounts[n].items():
+                save_data['contextCounts'][n_str][context] = total
+
+        with open(os.path.join(work_dir, 'model.checkpoint'), 'wt', encoding='utf-8') as f:
+            json.dump(save_data, f, ensure_ascii=False)
+
+        print(f'  model saved, stats:')
+        for n in range(1, self.N + 1):
+            print(f'    {n}-gram: {len(self.ngramCounts[n])} unique contexts')
+
 
     @classmethod
     def load(cls, work_dir):
-        # your code here
-        # this particular model has nothing to load, but for demonstration purposes we will load a blank file
+        """
+        load saved model back from json checkpoint
+        """
         model = MyModel()
-        with open(os.path.join(work_dir, 'model.checkpoint')) as f:
-            model.nextCharCountsDict = json.load(f)
+
+        with open(os.path.join(work_dir, 'model.checkpoint'), encoding='utf-8') as f:
+            save_data = json.load(f)
+
+        model.N = save_data['N']
+        model.lambdas = save_data['lambdas']
+
+        # rebuild the dicts from json
+        model.ngramCounts = {}
+        model.contextCounts = {}
+
+        for n in range(1, model.N + 1):
+            model.ngramCounts[n] = {}
+            model.contextCounts[n] = {}
+            n_str = str(n)
+
+            if n_str in save_data['ngramCounts']:
+                for context, charCounts in save_data['ngramCounts'][n_str].items():
+                    model.ngramCounts[n][context] = {}
+                    for char, count in charCounts.items():
+                        model.ngramCounts[n][context][char] = count
+
+            if n_str in save_data['contextCounts']:
+                for context, total in save_data['contextCounts'][n_str].items():
+                    model.contextCounts[n][context] = total
+
         return model
 
 

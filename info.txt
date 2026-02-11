@@ -22,3 +22,6 @@ character-level bigram (looks at only the last 1 character, predicts top 3 most 
 scored: 4/13 correct = 30.77% success rate
 note: falls back to "aei" for unseen characters, very limited context and narrow training data
 
+character-level 5-gram with interpolation (blends unigram through 5-gram with lambda weights, trained on 100k+ multilingual sentences across 10 languages)
+scored: 11/13 correct = 84.62% success rate
+note: uses interpolation from assignment 1b, weights: unigram 0.05, bigram 0.10, trigram 0.20, 4gram 0.25, 5gram 0.40
