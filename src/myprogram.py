@@ -8,6 +8,34 @@ import torch.nn as nn
 import torch.nn.functional as F
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
+"""
+CHECKPOINT 1:
+dataset: 888 made-up UW vs Oregon sentences (lol)
+model: basic n-gram
+example accuracy: 80 something?
+test accuracy: 
+
+CHECKPOINT 2:
+dataset: 10k sentences x 10 languages (Leipzig newspaper, kinda formal/off-domain)
+model: n-gram with interpolation
+example accuracy: ~80% (misleading, example data is tiny english-only)
+test accuracy: 36.2% real TA test, 88s runtime (died on multilingual inputs)
+
+CHECKPOINT 3:
+try 1:
+dataset: 10k sentences x 10 languages, same newspaper data as cp2
+model: character-level transformer + KV cache
+example accuracy: 69%
+test accuracy: n/a 
+
+try 2:
+dataset: 10k sentences x 25 languages, Leipzig across more languages
+model: character-level transformer + KV cache
+vocab: 5024 -> 6484 chars (now covers hindi, hebrew, korean etc)
+example accuracy: 53% (not reliable, example data is english-heavy)
+test accuracy: tbd
+"""
+
 # model config 
 EMBED_DIM   = 128
 NUM_HEADS   = 4
@@ -561,3 +589,4 @@ if __name__ == '__main__':
         print(f'Writing predictions to {args.test_output}')
         assert len(pred) == len(testData), f'Expected {len(testData)} preds, got {len(pred)}'
         MyModel.write_pred(pred, args.test_output)
+
