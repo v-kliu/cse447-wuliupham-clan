@@ -316,7 +316,7 @@ class MyModel:
     @classmethod
     def load_training_data(cls):
         allData = []
-        dataDir = './src/training_data'
+        dataDir = './training_data'
         if os.path.isdir(dataDir):
             for fname in sorted(os.listdir(dataDir)):
                 if fname.endswith('.txt'):
