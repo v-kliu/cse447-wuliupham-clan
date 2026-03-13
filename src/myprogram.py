@@ -36,18 +36,18 @@ example accuracy: 53% (not reliable, example data is english-heavy)
 test accuracy: tbd
 """
 
-# model config 
-EMBED_DIM   = 128
-NUM_HEADS   = 4
-NUM_LAYERS  = 4
-FFN_DIM     = 512
+# model config
+EMBED_DIM   = 256
+NUM_HEADS   = 8
+NUM_LAYERS  = 6
+FFN_DIM     = 1024
 MAX_SEQ_LEN = 256
 DROPOUT     = 0.1
 
-# training config 
+# training config
 BATCH_SIZE  = 128
-SEQ_LEN     = 128
-EPOCHS      = 3
+SEQ_LEN     = 256
+EPOCHS      = 8
 LR          = 3e-4
 
 
@@ -353,7 +353,6 @@ class MyModel:
         print(f'  device: {self.device}')
 
         optim = torch.optim.Adam(self.model.parameters(), lr=LR)
-        sched = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=EPOCHS)
 
         # flatten all sentences into one big token buffer (space as sentence sep)
         print('  tokenizing...')
@@ -364,6 +363,14 @@ class MyModel:
             allToks.append(spaceIdx)
         allToks = torch.tensor(allToks, dtype=torch.long)
         print(f'  total tokens: {len(allToks):,}')
+
+        # warmup (5%) + cosine decay over all batches
+        numWindows   = (len(allToks) - SEQ_LEN - 1) // SEQ_LEN
+        batchesPerEp = (numWindows + BATCH_SIZE - 1) // BATCH_SIZE
+        totalBatches = EPOCHS * batchesPerEp
+        sched = torch.optim.lr_scheduler.OneCycleLR(
+            optim, max_lr=LR, total_steps=totalBatches, pct_start=0.05
+        )
 
         self.model.train()
         for ep in range(EPOCHS):
@@ -399,11 +406,10 @@ class MyModel:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 optim.step()
+                sched.step()
 
                 totalLoss  += loss.item()
                 numBatches += 1
-
-            sched.step()
             avgLoss = totalLoss / max(numBatches, 1)
             print(f'  epoch {ep + 1}/{EPOCHS}  loss={avgLoss:.4f}')
 
