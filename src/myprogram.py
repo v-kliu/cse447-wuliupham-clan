@@ -26,14 +26,22 @@ try 1:
 dataset: 10k sentences x 10 languages, same newspaper data as cp2
 model: character-level transformer + KV cache
 example accuracy: 69%
-test accuracy: n/a 
+test accuracy: n/a
 
 try 2:
 dataset: 10k sentences x 25 languages, Leipzig across more languages
 model: character-level transformer + KV cache
 vocab: 5024 -> 6484 chars (now covers hindi, hebrew, korean etc)
 example accuracy: 53% (not reliable, example data is english-heavy)
-test accuracy: tbd
+test accuracy: 39.76%, 52s runtime (improvement over cp2 but lower than expected)
+
+CHECKPOINT 4:
+dataset: same 10k x 25 languages
+model: bigger transformer - 6 layers, 256 dim, 8 heads, 1024 ffn (was 4/128/4/512)
+changes: bumped epochs 3->8, seq_len 128->256 to match inference, added lr warmup (OneCycleLR)
+suspected cp3 was underfitting - model too small + not enough training, so scaled both up
+had to train on google colab T4 (~20 min) since cpu would've been like 4+ hours
+example accuracy: 69.2%
 """
 
 # model config
